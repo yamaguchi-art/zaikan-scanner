@@ -35,6 +35,7 @@
   <h1>作業実績スキャン <span id="staffLabel"></span> <a href="#" class="small" onclick="changeStaff();return false;">(変更)</a></h1>
   <div class="card">
     <div id="reader"></div>
+    <button class="btn" id="scanBtn" onclick="armScan()" style="margin-top:10px;">バーコードを読み取る</button>
   </div>
 
   <h2 style="font-size:15px;">進行中のジョブ</h2>
@@ -54,6 +55,23 @@
 
   var STAFF_KEY = 'zaikan_staff_name';
   var scanner = null;
+  var scanArmed = false;
+
+  // ボタンを押した時だけ読み取りを有効にする(連続認識による開始/終了の暴発を防ぐため)。
+  function armScan() {
+    if (scanArmed) { return; }
+    scanArmed = true;
+    var btn = document.getElementById('scanBtn');
+    btn.disabled = true;
+    btn.textContent = '読み取り中…バーコードにカメラを向けてください';
+  }
+
+  function disarmScan() {
+    scanArmed = false;
+    var btn = document.getElementById('scanBtn');
+    btn.disabled = false;
+    btn.textContent = 'バーコードを読み取る';
+  }
 
   function log(msg) {
     var el = document.getElementById('debug');
@@ -166,6 +184,9 @@
   }
 
   function onScanSuccess(decodedText) {
+    if (!scanArmed) { return; } // ボタンを押していない間の連続認識は無視する
+    disarmScan();
+
     var staffName = localStorage.getItem(STAFF_KEY);
     apiPost({
       action: 'scan',
