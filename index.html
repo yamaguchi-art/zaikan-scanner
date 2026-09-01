@@ -10,9 +10,16 @@
   .card { background: #fff; border-radius: 8px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   select, button { font-size: 16px; padding: 10px; width: 100%; box-sizing: border-box; }
   .btn { background: #1a73e8; color: #fff; border: none; border-radius: 6px; margin-top: 8px; }
-  .toast { position: fixed; top: 10px; left: 10px; right: 10px; padding: 12px; border-radius: 6px; color: #fff; display: none; z-index: 999; text-align: center; }
-  .toast.ok { background: #188038; }
-  .toast.error { background: #c5221f; }
+  .toast {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: none; z-index: 999; align-items: center; justify-content: center;
+    flex-direction: column; color: #fff; text-align: center; padding: 24px; box-sizing: border-box;
+  }
+  .toast.show { display: flex; }
+  .toast .icon { font-size: 64px; line-height: 1; margin-bottom: 12px; }
+  .toast .msg { font-size: 26px; font-weight: bold; white-space: pre-line; }
+  .toast.ok { background: rgba(24,128,56,0.95); }
+  .toast.error { background: rgba(197,34,31,0.95); }
   .open-job { display: flex; align-items: center; gap: 8px; }
   .badge { background: #fbbc04; color: #000; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
   #debug { white-space: pre-wrap; font-size: 12px; color: #555; background: #fff; padding: 10px; border-radius: 6px; margin-top: 14px; display: none; }
@@ -21,7 +28,10 @@
 </head>
 <body>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast">
+  <div class="icon" id="toastIcon"></div>
+  <div class="msg" id="toastMsg"></div>
+</div>
 
 <div id="staffSelectView">
   <h1>作業者を選択してください</h1>
@@ -83,12 +93,17 @@
     el.style.display = el.style.display === 'none' ? 'block' : 'none';
   }
 
-  function showToast(message, isError) {
+  function showToast(message, isError, icon) {
     var el = document.getElementById('toast');
-    el.textContent = message;
-    el.className = 'toast ' + (isError ? 'error' : 'ok');
-    el.style.display = 'block';
-    setTimeout(function () { el.style.display = 'none'; }, 3000);
+    document.getElementById('toastMsg').textContent = message;
+    document.getElementById('toastIcon').textContent = icon || (isError ? '✕' : '✓');
+    el.className = 'toast show ' + (isError ? 'error' : 'ok');
+
+    if (navigator.vibrate) {
+      navigator.vibrate(isError ? [80, 60, 80, 60, 80] : [150]);
+    }
+
+    setTimeout(function () { el.className = 'toast'; }, 1800);
   }
 
   // Apps Script APIをGETで呼ぶ(単純リクエストにしてCORSプリフライトを避ける)
@@ -196,8 +211,9 @@
       userAgent: navigator.userAgent,
     }).then(function (result) {
       if (!result.ok) { showToast(result.message, true); return; }
-      var label = result.eventType === 'START' ? '開始' : '終了';
-      showToast(label + ': ' + result.partName + ' (工程' + result.processNo + ')');
+      var isStart = result.eventType === 'START';
+      var label = isStart ? '開始' : '終了';
+      showToast(label + '\n' + result.partName + ' (工程' + result.processNo + ')', false, isStart ? '▶' : '■');
       renderOpenJobs(result.openJobs);
     }).catch(function (err) {
       showToast('エラー: ' + err.message, true);
