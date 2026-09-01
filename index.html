@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>作業実績スキャン</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .card { background: #fff; border-radius: 8px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  select, button { font-size: 16px; padding: 10px; width: 100%; box-sizing: border-box; }
+  .btn { background: #1a73e8; color: #fff; border: none; border-radius: 6px; margin-top: 8px; }
+  .toast { position: fixed; top: 10px; left: 10px; right: 10px; padding: 12px; border-radius: 6px; color: #fff; display: none; z-index: 999; text-align: center; }
+  .toast.ok { background: #188038; }
+  .toast.error { background: #c5221f; }
+  .open-job { display: flex; align-items: center; gap: 8px; }
+  .badge { background: #fbbc04; color: #000; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+  #debug { white-space: pre-wrap; font-size: 12px; color: #555; background: #fff; padding: 10px; border-radius: 6px; margin-top: 14px; display: none; }
+  a.small { font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<div id="staffSelectView">
+  <h1>作業者を選択してください</h1>
+  <div class="card">
+    <select id="staffSelect"></select>
+    <button class="btn" onclick="selectStaff()">この作業者で開始</button>
+  </div>
+</div>
+
+<div id="scanView" style="display:none;">
+  <h1>作業実績スキャン <span id="staffLabel"></span> <a href="#" class="small" onclick="changeStaff();return false;">(変更)</a></h1>
+  <div class="card">
+    <div id="reader"></div>
+  </div>
+
+  <h2 style="font-size:15px;">進行中のジョブ</h2>
+  <div id="openJobs"></div>
+</div>
+
+<div id="debug"></div>
+<a href="#" class="small" onclick="toggleDebug();return false;">診断情報を表示/非表示</a>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+  // 実際原価管理システムのApps Script Web AppのURL(社内Googleアカウントでのログインが必要)
+  var API_URL = 'https://script.google.com/macros/s/AKfycbx91MdOFi2fs0bKG4bWIg7XyX75utiMT7El2WWl1_gw6jlTwL3SdZ4eQlaYe-5wUZboWA/exec';
+
+  var STAFF_KEY = 'zaikan_staff_name';
+  var scanner = null;
+
+  function log(msg) {
+    var el = document.getElementById('debug');
+    el.textContent += msg + '\n';
+  }
+
+  function toggleDebug() {
+    var el = document.getElementById('debug');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function showToast(message, isError) {
+    var el = document.getElementById('toast');
+    el.textContent = message;
+    el.className = 'toast ' + (isError ? 'error' : 'ok');
+    el.style.display = 'block';
+    setTimeout(function () { el.style.display = 'none'; }, 3000);
+  }
+
+  // Apps Script APIをGETで呼ぶ(単純リクエストにしてCORSプリフライトを避ける)
+  function apiGet(params) {
+    var qs = Object.keys(params).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+    var url = API_URL + '?' + qs;
+    log('GET ' + url);
+    return fetch(url, { method: 'GET' }).then(handleApiResponse);
+  }
+
+  // Apps Script APIをPOSTで呼ぶ(text/plainボディにしてCORSプリフライトを避ける)
+  function apiPost(params) {
+    log('POST ' + JSON.stringify(params));
+    return fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }).then(handleApiResponse);
+  }
+
+  function handleApiResponse(res) {
+    log('status=' + res.status + ' redirected=' + res.redirected + ' url=' + res.url);
+    return res.text().then(function (text) {
+      log('response(先頭300字): ' + text.slice(0, 300));
+      var data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error('JSONとして解析できませんでした(ログインが必要な可能性があります)。診断情報を確認してください。');
+      }
+      return data;
+    });
+  }
+
+  function loadStaffOptions() {
+    apiGet({ action: 'listStaff' }).then(function (result) {
+      if (!result.ok) { showToast(result.message, true); return; }
+      var select = document.getElementById('staffSelect');
+      select.innerHTML = '';
+      result.data.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        select.appendChild(opt);
+      });
+    }).catch(function (err) {
+      showToast('スタッフ一覧の取得に失敗: ' + err.message, true);
+    });
+  }
+
+  function selectStaff() {
+    var select = document.getElementById('staffSelect');
+    var staffName = select.value;
+    if (!staffName) { showToast('作業者を選択してください', true); return; }
+    localStorage.setItem(STAFF_KEY, staffName);
+    startScanView();
+  }
+
+  function changeStaff() {
+    if (scanner) { scanner.clear().catch(function () {}); scanner = null; }
+    localStorage.removeItem(STAFF_KEY);
+    document.getElementById('scanView').style.display = 'none';
+    document.getElementById('staffSelectView').style.display = 'block';
+  }
+
+  function startScanView() {
+    var staffName = localStorage.getItem(STAFF_KEY);
+    document.getElementById('staffSelectView').style.display = 'none';
+    document.getElementById('scanView').style.display = 'block';
+    document.getElementById('staffLabel').textContent = '(' + staffName + ')';
+    refreshOpenJobs();
+    initScanner();
+  }
+
+  function initScanner() {
+    scanner = new Html5QrcodeScanner('reader', {
+      fps: 10,
+      qrbox: { width: 250, height: 120 },
+      formatsToSupport: [Html5QrcodeSupportedFormats.CODE_128],
+    });
+    scanner.render(onScanSuccess);
+  }
+
+  function onScanSuccess(decodedText) {
+    var staffName = localStorage.getItem(STAFF_KEY);
+    apiPost({
+      action: 'scan',
+      staffId: staffName,
+      staffName: staffName,
+      barcode: decodedText,
+      userAgent: navigator.userAgent,
+    }).then(function (result) {
+      if (!result.ok) { showToast(result.message, true); return; }
+      var label = result.eventType === 'START' ? '開始' : '終了';
+      showToast(label + ': ' + result.partName + ' (工程' + result.processNo + ')');
+      renderOpenJobs(result.openJobs);
+    }).catch(function (err) {
+      showToast('エラー: ' + err.message, true);
+    });
+  }
+
+  function refreshOpenJobs() {
+    var staffName = localStorage.getItem(STAFF_KEY);
+    apiGet({ action: 'openJobs', staffId: staffName }).then(function (result) {
+      if (!result.ok) { showToast(result.message, true); return; }
+      renderOpenJobs(result.data);
+    }).catch(function (err) {
+      showToast('進行中ジョブの取得に失敗: ' + err.message, true);
+    });
+  }
+
+  function renderOpenJobs(jobs) {
+    var container = document.getElementById('openJobs');
+    if (!jobs || jobs.length === 0) {
+      container.innerHTML = '<div class="card">進行中のジョブはありません</div>';
+      return;
+    }
+    container.innerHTML = jobs.map(function (j) {
+      return '<div class="card open-job"><span class="badge">作業中</span> '
+        + '部品No ' + j.partNo + ' / 工程' + j.processNo + '</div>';
+    }).join('');
+  }
+
+  (function init() {
+    loadStaffOptions();
+    var staffName = localStorage.getItem(STAFF_KEY);
+    if (staffName) { startScanView(); }
+  })();
+</script>
+</body>
+</html>
