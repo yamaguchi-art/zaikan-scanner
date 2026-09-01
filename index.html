@@ -115,6 +115,8 @@
         select.appendChild(opt);
       });
     }).catch(function (err) {
+      log('FETCH ERROR: ' + err.name + ': ' + err.message);
+      document.getElementById('debug').style.display = 'block';
       showToast('スタッフ一覧の取得に失敗: ' + err.message, true);
     });
   }
@@ -193,6 +195,7 @@
   }
 
   (function init() {
+    document.getElementById('debug').style.display = 'block';
     loadStaffOptions();
     var staffName = localStorage.getItem(STAFF_KEY);
     if (staffName) { startScanView(); }
