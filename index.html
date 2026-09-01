@@ -46,8 +46,11 @@
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
-  // 実際原価管理システムのApps Script Web AppのURL(社内Googleアカウントでのログインが必要)
-  var API_URL = 'https://script.google.com/macros/s/AKfycbx91MdOFi2fs0bKG4bWIg7XyX75utiMT7El2WWl1_gw6jlTwL3SdZ4eQlaYe-5wUZboWA/exec';
+  // 実際原価管理システムのApps Script Web App(API専用/ANYONEアクセス)のURL。
+  // ダッシュボード等の画面は別の社内ログイン限定デプロイのままで、こちらはAPIのみ。
+  var API_URL = 'https://script.google.com/macros/s/AKfycbzMuWsiXqAWH_WEAb4UUSnw3fMMz0Veh02KDokARDvH2h4q-oCtf1gJS4m3qEtUWxSBgw/exec';
+  // 誰でも呼べるデプロイのため、簡易的な合言葉トークンで保護している(Apps Script側のScript Propertiesと一致させる)。
+  var API_TOKEN = '83bb649786f74994b3d50394e82f6d66';
 
   var STAFF_KEY = 'zaikan_staff_name';
   var scanner = null;
@@ -72,6 +75,7 @@
 
   // Apps Script APIをGETで呼ぶ(単純リクエストにしてCORSプリフライトを避ける)
   function apiGet(params) {
+    params = Object.assign({ token: API_TOKEN }, params);
     var qs = Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
     }).join('&');
@@ -82,6 +86,7 @@
 
   // Apps Script APIをPOSTで呼ぶ(text/plainボディにしてCORSプリフライトを避ける)
   function apiPost(params) {
+    params = Object.assign({ token: API_TOKEN }, params);
     log('POST ' + JSON.stringify(params));
     return fetch(API_URL, {
       method: 'POST',
