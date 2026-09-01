@@ -10,6 +10,10 @@
   .card { background: #fff; border-radius: 8px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   select, button { font-size: 16px; padding: 10px; width: 100%; box-sizing: border-box; }
   .btn { background: #1a73e8; color: #fff; border: none; border-radius: 6px; margin-top: 8px; }
+  #reader { border: 4px solid transparent; border-radius: 6px; transition: border-color 0.15s; }
+  #reader.armed { border-color: #f9ab00; animation: pulse 1s infinite; }
+  #reader.detected { border-color: #188038; animation: none; }
+  @keyframes pulse { 0%,100% { border-color: #f9ab00; } 50% { border-color: #fce8b2; } }
   .toast {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     display: none; z-index: 999; align-items: center; justify-content: center;
@@ -74,6 +78,9 @@
     var btn = document.getElementById('scanBtn');
     btn.disabled = true;
     btn.textContent = '読み取り中…バーコードにカメラを向けてください';
+    var reader = document.getElementById('reader');
+    reader.classList.remove('detected');
+    reader.classList.add('armed');
   }
 
   function disarmScan() {
@@ -81,6 +88,16 @@
     var btn = document.getElementById('scanBtn');
     btn.disabled = false;
     btn.textContent = 'バーコードを読み取る';
+    document.getElementById('reader').classList.remove('armed');
+  }
+
+  // バーコードを検出した瞬間(サーバーへの記録より前)に即座にフィードバックする。
+  function flashDetected() {
+    var reader = document.getElementById('reader');
+    reader.classList.remove('armed');
+    reader.classList.add('detected');
+    if (navigator.vibrate) { navigator.vibrate(60); }
+    setTimeout(function () { reader.classList.remove('detected'); }, 800);
   }
 
   function log(msg) {
@@ -201,6 +218,9 @@
   function onScanSuccess(decodedText) {
     if (!scanArmed) { return; } // ボタンを押していない間の連続認識は無視する
     disarmScan();
+    flashDetected();
+    var btn = document.getElementById('scanBtn');
+    btn.textContent = '記録しています…';
 
     var staffName = localStorage.getItem(STAFF_KEY);
     apiPost({
