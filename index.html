@@ -135,7 +135,7 @@
   }
 
   function changeStaff() {
-    if (scanner) { scanner.clear().catch(function () {}); scanner = null; }
+    if (scanner) { scanner.stop().catch(function () {}); scanner = null; }
     localStorage.removeItem(STAFF_KEY);
     document.getElementById('scanView').style.display = 'none';
     document.getElementById('staffSelectView').style.display = 'block';
@@ -151,12 +151,18 @@
   }
 
   function initScanner() {
-    scanner = new Html5QrcodeScanner('reader', {
-      fps: 10,
-      qrbox: { width: 250, height: 120 },
+    scanner = new Html5Qrcode('reader', {
       formatsToSupport: [Html5QrcodeSupportedFormats.CODE_128],
     });
-    scanner.render(onScanSuccess);
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 120 } },
+      onScanSuccess
+    ).catch(function (err) {
+      log('カメラ起動エラー: ' + err);
+      document.getElementById('debug').style.display = 'block';
+      showToast('カメラの起動に失敗しました: ' + err, true);
+    });
   }
 
   function onScanSuccess(decodedText) {
