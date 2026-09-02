@@ -123,6 +123,29 @@
     setTimeout(function () { el.className = 'toast'; }, 1800);
   }
 
+  function sleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  // fetchが応答なしでハングし続けないよう、一定時間で強制的にタイムアウト扱いにする。
+  function fetchWithTimeout(url, options, timeoutMs) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, timeoutMs || 8000);
+    return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+      .finally(function () { clearTimeout(timer); });
+  }
+
+  // Apps Script側(script.googleusercontent.com)は稀に一瞬だけ404を返すことがあるため、
+  // 失敗したら短い間隔を空けて自動的に再試行する。
+  function withRetry(fn, retriesLeft) {
+    if (retriesLeft === undefined) { retriesLeft = 2; }
+    return fn().catch(function (err) {
+      if (retriesLeft <= 0) { throw err; }
+      log('リトライします(残り' + retriesLeft + '回): ' + err.message);
+      return sleep(500).then(function () { return withRetry(fn, retriesLeft - 1); });
+    });
+  }
+
   // Apps Script APIをGETで呼ぶ(単純リクエストにしてCORSプリフライトを避ける)
   function apiGet(params) {
     params = Object.assign({ token: API_TOKEN }, params);
@@ -130,18 +153,22 @@
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
     }).join('&');
     var url = API_URL + '?' + qs;
-    log('GET ' + url);
-    return fetch(url, { method: 'GET' }).then(handleApiResponse);
+    return withRetry(function () {
+      log('GET ' + url);
+      return fetchWithTimeout(url, { method: 'GET' }).then(handleApiResponse);
+    });
   }
 
   // Apps Script APIをPOSTで呼ぶ(text/plainボディにしてCORSプリフライトを避ける)
   function apiPost(params) {
     params = Object.assign({ token: API_TOKEN }, params);
-    log('POST ' + JSON.stringify(params));
-    return fetch(API_URL, {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }).then(handleApiResponse);
+    return withRetry(function () {
+      log('POST ' + JSON.stringify(params));
+      return fetchWithTimeout(API_URL, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }).then(handleApiResponse);
+    });
   }
 
   function handleApiResponse(res) {
@@ -236,7 +263,10 @@
       showToast(label + '\n' + result.partName + ' (工程' + result.processNo + ')', false, isStart ? '▶' : '■');
       renderOpenJobs(result.openJobs);
     }).catch(function (err) {
-      showToast('エラー: ' + err.message, true);
+      showToast('通信に失敗しました。もう一度お試しください', true);
+      log('SCAN ERROR: ' + err.message);
+    }).finally(function () {
+      btn.textContent = 'バーコードを読み取る';
     });
   }
 
